@@ -1,5 +1,6 @@
 # Юниты
 
+
 ## Сервер за NAT (chiz - xiaomi-redmi-note4x arm64)
 
 ### SSH тунель - обратный прокси
@@ -19,13 +20,63 @@ ExecStart=/usr/bin/autossh -M 0 -N \
   -R 8080:localhost:80 \
   -R 8443:localhost:443 \
   -R 2228:localhost:228 \
-  -R 8000:localhost:8000 \
+  -R 8000:localhost:8001 \
   achi@91.132.162.205
 Restart=always
 RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
+```
+
+### nginx
+/home/www/docker/nginx/conf/chiz.work.gb.conf
+
+
+```conf
+# Расширенный формат логов
+log_format detailed '$remote_addr - $remote_user [$time_local] '
+                    '"$request" $status $body_bytes_sent '
+                    '"$http_referer" "$http_user_agent" '
+                    '$request_time "$host" "$scheme" "$http_cookie"';
+
+server {
+    listen 80;
+    server_name chiz.work.gd;
+
+    # Корень фронтенда
+    root /usr/share/nginx/html/chiz.work.gd-frontend;
+    index index.html;
+
+    # Отдача статики
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Прокси для API
+    location /api/ {
+        proxy_pass http://127.0.0.1:8001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    # Кеширование статических файлов
+    location ~* \.(?:ico|css|js|gif|jpe?g|png|woff2?|eot|ttf|svg|json)$ {
+        expires 1M;
+        access_log off;
+        add_header Cache-Control "public";
+    }
+
+    # Логи
+    access_log /var/log/nginx/chiz_frontend_access.log detailed;
+    error_log /var/log/nginx/chiz_frontend_error.log debug;
+}
 ```
 
 
@@ -193,6 +244,7 @@ EOF
 -A ufw-before-output -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 -A ufw-before-forward -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 
+# ВАЖНО!!!
 # drop INVALID packets (logs these in loglevel medium and higher)
 #-A ufw-before-input -m conntrack --ctstate INVALID -j ufw-logging-deny
 #-A ufw-before-input -m conntrack --ctstate INVALID -j DROP
@@ -248,8 +300,7 @@ COMMIT
 
 /etc/nginx/sites-available/reverse-proxy.conf
 ```sh
-server {
-    listen 443 ssl;
+  GNU nano 4.8                                          /etc/nginx/sites-available/reverse-proxy.conf                                                     
     server_name chiz.work.gd;
 
     ssl_certificate /etc/letsencrypt/live/chiz.work.gd/fullchain.pem;
@@ -262,6 +313,18 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     access_log /var/log/nginx/chiz.work.gd.access.log;
     error_log  /var/log/nginx/chiz.work.gd.error.log;
 }
@@ -272,4 +335,5 @@ server {
 
     return 301 https://$host$request_uri;
 }
+
 ```
